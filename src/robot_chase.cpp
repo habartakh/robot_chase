@@ -27,14 +27,18 @@ public:
 
     // Call on_timer function every second
     timer_ =
-        this->create_wall_timer(500ms, std::bind(&RobotChase::on_timer, this));
+        this->create_wall_timer(100ms, std::bind(&RobotChase::on_timer, this));
 
-    // Set the gains
-    kp_distance = 1.0;
-    kp_yaw = 1.0;
+    // Set the gains and max velocities
+    kp_distance = 0.5;
+    kp_yaw = 0.5;
+    max_linear_velocity_ = 0.5;
+    max_angular_velocity_ = 0.8;
+    min_distance = 0.4; // start slowing down when closer than this
 
     // indicates if morty's initial position is saved or not yet
-    initialized = false;
+    is_pose_initialized = false;
+    morty_started_moving_ = false;
 
     RCLCPP_INFO(this->get_logger(), "Robot chase Node Ready !");
   }
@@ -65,11 +69,15 @@ private:
     double dx = t.transform.translation.x;
     double dy = t.transform.translation.y;
 
-    if (!initialized) {
+    std::cout << "dx = " << dx << std::endl;
+
+    std::cout << "dy = " << dy << std::endl;
+
+    if (!is_pose_initialized) {
       // Save Morty's initial position
       initial_morty_x = dx;
       initial_morty_y = dy;
-      initialized = true;
+      is_pose_initialized = true;
       RCLCPP_INFO(this->get_logger(), "Initial morty's position obtained.");
     }
 
@@ -94,42 +102,33 @@ private:
     else {
 
       // Errors
-      double error_distance = std::hypot(dx, dy);
+      double error_distance = std::sqrt(dx * dx + dy * dy);
       std::cout << "error_distance :" << error_distance << std::endl;
-      //   double error_yaw = std::atan2(dy, dx);
-      // Compute the yaw between the robots from tf rotation
-      tf2::Quaternion q(t.transform.rotation.x, t.transform.rotation.y,
-                        t.transform.rotation.z, t.transform.rotation.w);
 
-      double roll, pitch, yaw;
-      tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-      double error_yaw = yaw; // Yaw difference between Rick and Morty
+      double error_yaw = std::atan2(dy, dx);
+      // std::cout << "error_yaw : " << error_yaw << std::endl;
 
-      std::cout << "error_yaw : " << error_yaw << std::endl;
-
-      double min_distance = 0.2; // start slowing down when closer than this
-
-      // Compute velocity and get the sign + or - of velocity
-      linear_velocity = kp_distance * error_distance * dx / std::abs(dx);
+      // Compute velocity and get the direction of movement
+      linear_velocity = kp_distance * error_distance;
       angular_velocity = kp_yaw * error_yaw;
 
       // Slow down if too close
       if (error_distance < min_distance) {
         RCLCPP_INFO(this->get_logger(), "Very close to Morty, stop!");
-        linear_velocity = 0.0;
-        angular_velocity = 0.0;
-        initialized = false; // restart the position initialization to know when
-                             // morty will move again
+        cmd_msg.linear.x = 0.0;
+        cmd_msg.angular.z = 0.0;
+        publisher_->publish(cmd_msg);
+
+        is_pose_initialized = false; // restart the position initialization to
+                                     //   know when morty will move again
 
         return;
       }
     }
 
     // Publish Twist
-
-    cmd_msg.linear.x = linear_velocity;
-    cmd_msg.angular.z = angular_velocity;
-
+    cmd_msg.linear.x = std::min(linear_velocity, max_linear_velocity_);
+    cmd_msg.angular.z = std::min(angular_velocity, max_angular_velocity_);
     publisher_->publish(cmd_msg);
   }
 
@@ -146,11 +145,14 @@ private:
   double linear_velocity;
   double angular_velocity;
   geometry_msgs::msg::Twist cmd_msg;
+  double max_linear_velocity_;
+  double max_angular_velocity_;
 
   bool morty_started_moving_;
-  bool initialized;
+  bool is_pose_initialized;
   double initial_morty_x;
   double initial_morty_y;
+  double min_distance;
 };
 
 int main(int argc, char *argv[]) {
