@@ -69,9 +69,8 @@ private:
     double dx = t.transform.translation.x;
     double dy = t.transform.translation.y;
 
-    std::cout << "dx = " << dx << std::endl;
-
-    std::cout << "dy = " << dy << std::endl;
+    // std::cout << "dx = " << dx << std::endl;
+    // std::cout << "dy = " << dy << std::endl;
 
     if (!is_pose_initialized) {
       // Save Morty's initial position
@@ -148,6 +147,7 @@ private:
   double max_linear_velocity_;
   double max_angular_velocity_;
 
+  // Morty's initial state
   bool morty_started_moving_;
   bool is_pose_initialized;
   double initial_morty_x;
